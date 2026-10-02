@@ -1,0 +1,12 @@
+# Ambiente virtual Python
+.venv/
+venv/
+env/
+
+# conferir qual e se se vou usar algum
+
+# Variáveis e credenciais
+.env
+
+# Python
+__pycache__/
