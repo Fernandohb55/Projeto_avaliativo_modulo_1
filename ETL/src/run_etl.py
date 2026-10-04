@@ -1,81 +1,38 @@
-import os
-from dotenv import load_dotenv
-import pandas as pd
-from sqlalchemy import create_engine, text
+"""Ponto de entrada: executa o pipeline completo.
 
-# Carregar variáveis de ambiente
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
+Uso (a partir da raiz do projeto):
+    python src/run_etl.py
+"""
+import importlib
+import sys
+import time
+from pathlib import Path
 
-def executar_pipeline_etl():
-    print("==========================================")
-    print(" INICIANDO PIPELINE ETL (MEDALLION)")
-    print("==========================================")
-    
-    # 1. Criar schemas no Data Warehouse
-    with engine.begin() as conn:
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS bronze;"))
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS silver;"))
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS gold;"))
-    print("[1/4] Schemas (bronze, silver, gold) criados/verificados com sucesso.")
+# Garante que os modulos de src/ sejam encontrados mesmo com
+# "python -m src.run_etl" (executado a partir da raiz do projeto).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-    # 2. Camada Bronze (Injestão de dados brutos)
-    caminho_csv = "data/supermarket_sales.csv"  # Ajuste o caminho se necessário
-    if not os.path.exists(caminho_csv):
-        print(f"[Erro] Ficheiro CSV não encontrado no caminho: {caminho_csv}")
-        return
-    
-    df_raw = pd.read_csv(caminho_csv)
-    df_raw.to_sql(
-        name="supermarket_raw",
-        con=engine,
-        schema="bronze",
-        if_exists="replace",
-        index=False
-    )
-    print("[2/4] Camada Bronze: Dados brutos carregados com sucesso.")
+# Modulos iniciados por numero nao podem ser importados com "import";
+# por isso usamos importlib.import_module com o nome em string.
+ETAPAS = [
+    ("Fase 0 - Banco e tabelas", "setup_db"),
+    ("Fase 1 - Carga Raw", "carga_raw"),
+    ("Fase 2 - Consultas e exportacao CSV", "exportacao"),
+    ("Fase 2/3 - Leitura e inspecao no Pandas", "01_leitura_dados"),
+    ("Fase 3 - ETL e camada tratada", "02_etl_vendas"),
+    ("Fase 4 - Estatistica e respostas", "03_estatistica"),
+]
 
-    # 3. Camada Silver (Limpeza e Tratamento)
-    df_silver = df_raw.copy()
-    df_silver["Date"] = pd.to_datetime(df_silver["Date"])
-    df_silver.dropna(inplace=True)
-    
-    # Padronizar nomes de colunas para minúsculas
-    df_silver.columns = [col.lower().replace(" ", "_") for col in df_silver.columns]
-    
-    df_silver.to_sql(
-        name="supermarket_clean",
-        con=engine,
-        schema="silver",
-        if_exists="replace",
-        index=False
-    )
-    print("[3/4] Camada Silver: Dados limpos e transformados carregados com sucesso.")
 
-    # 4. Camada Gold (Agregações de Negócio)
-    df_gold = (
-        df_silver.groupby("product_line")
-        .agg(
-            total_vendas=("total", "sum"),
-            media_vendas=("total", "mean"),
-            quantidade_total=("quantity", "sum")
-        )
-        .reset_index()
-    )
-    
-    df_gold.to_sql(
-        name="vendas_por_linha_produto",
-        con=engine,
-        schema="gold",
-        if_exists="replace",
-        index=False
-    )
-    print("[4/4] Camada Gold: Tabelas agregadas criadas com sucesso.")
-    
-    print("==========================================")
-    print(" PIPELINE EXECUTADO COM SUCESSO A 100%!")
-    print("==========================================")
+def main() -> None:
+    inicio = time.time()
+    for i, (nome, modulo) in enumerate(ETAPAS, start=1):
+        print(f"\n{'#' * 70}\n# [{i}/{len(ETAPAS)}] {nome}\n{'#' * 70}")
+        importlib.import_module(modulo).executar()
+    print(f"\nPipeline concluido em {time.time() - inicio:.1f}s")
+
+
 
 if __name__ == "__main__":
-    executar_pipeline_etl()
+    main()
+

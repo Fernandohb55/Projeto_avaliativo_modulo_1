@@ -1,8 +1,0 @@
-pandas
-sqlalchemy
-psycopg2-binary
-matplotlib
-seaborn
-requests
-python-dotenv
-openpyxl
